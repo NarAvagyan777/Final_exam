@@ -1,7 +1,9 @@
 ﻿using Application.Services;
 using Domain.Interfaces;
+using Domain.RepositoryInterfaces;
 using Infrastructure.Auth;
 using Infrastructure.Data;
+using Infrastructure.RepositoryImplamantations;
 using Infrastructure.RepositoryImplementations;
 using Infrastructure.RepositoryInterfaces;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
@@ -27,6 +29,8 @@ builder.Services.AddScoped<IRecipeRepository, RecipeRepository>();
 builder.Services.AddScoped<IIngredientRepository, IngredientRepository>();
 builder.Services.AddScoped<INutritionRepository, NutritionRepository>();
 builder.Services.AddScoped<IRatingRepository, RatingRepository>();
+builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
+
 
 // ===========================================
 // 🧩 SERVICE REGISTRATION
@@ -36,6 +40,20 @@ builder.Services.AddScoped<IRecipeService, RecipesService>();
 builder.Services.AddScoped<IIngredientService, IngredientService>();
 builder.Services.AddScoped<INutritionService, NutritionService>();
 builder.Services.AddScoped<IRatingService, RatingService>();
+
+// ===========================================
+// 🌐 ENABLE CORS (important for Swagger and Frontend)
+// ===========================================
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("AllowAll", policy =>
+    {
+        policy
+            .AllowAnyOrigin()    // ✅ Թույլատրում է ցանկացած frontend (localhost կամ domain)
+            .AllowAnyMethod()    // ✅ Թույլատրում է GET, POST, PUT, DELETE...
+            .AllowAnyHeader();   // ✅ Թույլատրում է custom headers (օր. Authorization)
+    });
+});
 
 // ===========================================
 // 🔐 JWT AUTHENTICATION CONFIGURATION
@@ -122,6 +140,12 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
+
+// ✅ Enable Static Files (for image access in /wwwroot/images)
+app.UseStaticFiles();
+
+// ✅ Enable CORS (fix for “Failed to fetch”)
+app.UseCors("AllowAll");
 
 // ✅ Custom middleware for image validation
 app.UseImageValidation();

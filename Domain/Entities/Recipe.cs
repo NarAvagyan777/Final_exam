@@ -15,6 +15,6 @@
         public Nutrition Nutrition { get; set; } = default!;
         public ICollection<RecipeIngredient> RecipeIngredients { get; set; } = new List<RecipeIngredient>();
         public ICollection<Rating> Ratings { get; set; } = new List<Rating>();
-        public double AverageRating => Ratings.Any() ? Ratings.Average(r => r.Score) : 0;
+        public double AverageRating { get; set; } = 0;
     }
 }

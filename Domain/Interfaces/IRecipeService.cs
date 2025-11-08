@@ -1,4 +1,5 @@
 ﻿using Domain.DTOs;
+using Domain.Entities;
 
 namespace Domain.Interfaces
 {
@@ -9,5 +10,9 @@ namespace Domain.Interfaces
         Task<RecipeDTO> CreateAsync(CreateRecipeDto dto);
         Task<bool> DeleteAsync(Guid id);
         Task<bool> RateRecipeAsync(Guid recipeId, Guid userId, int score, string? comment);
+        Task<RecipeDTO> UpdateAsync(Recipe recipe); 
+        Task<Recipe?> GetEntityByIdAsync(Guid id);
+
+
     }
 }

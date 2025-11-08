@@ -1,6 +1,7 @@
 ﻿using Domain.DTOs;
 using Domain.Entities;
 using Domain.Interfaces;
+using Domain.RepositoryInterfaces; // 👈 միացրու սա UnitOfWork-ի համար
 using Infrastructure.RepositoryInterfaces;
 
 namespace Application.Services
@@ -9,11 +10,16 @@ namespace Application.Services
     {
         private readonly IRecipeRepository _recipeRepo;
         private readonly IRatingRepository _ratingRepo;
+        private readonly IUnitOfWork _unitOfWork;
 
-        public RecipesService(IRecipeRepository recipeRepo, IRatingRepository ratingRepo)
+        public RecipesService(
+            IRecipeRepository recipeRepo,
+            IRatingRepository ratingRepo,
+            IUnitOfWork unitOfWork)
         {
             _recipeRepo = recipeRepo;
             _ratingRepo = ratingRepo;
+            _unitOfWork = unitOfWork;
         }
 
         // ✅ Բոլոր recipe-ների ստացում էջայնությամբ և ֆիլտրերով
@@ -43,11 +49,12 @@ namespace Application.Services
                             Cuisine = r.Cuisine,
                             Difficulty = r.Difficulty,
                             AverageRating = r.AverageRating,
-                            UserId = r.UserId
+                            UserId = r.UserId,
+                            ImagePath = r.ImagePath
                         });
         }
 
-        // ✅ Ստանալ մեկ recipe ըստ ID-ի
+        // ✅ Ստանալ մեկ recipe ըստ ID-ի (DTO)
         public async Task<RecipeDTO?> GetByIdAsync(Guid id)
         {
             var recipe = await _recipeRepo.GetByIdAsync(id);
@@ -61,8 +68,15 @@ namespace Application.Services
                 Cuisine = recipe.Cuisine,
                 Difficulty = recipe.Difficulty,
                 AverageRating = recipe.AverageRating,
-                UserId = recipe.UserId
+                UserId = recipe.UserId,
+                ImagePath = recipe.ImagePath
             };
+        }
+
+        // ✅ Ստանալ Recipe entity ըստ ID-ի (upload-ի կամ update-ի համար)
+        public async Task<Recipe?> GetEntityByIdAsync(Guid id)
+        {
+            return await _recipeRepo.GetByIdAsync(id);
         }
 
         // ✅ Ստեղծել նոր recipe (օգտագործում է CreateRecipeDto)
@@ -74,14 +88,12 @@ namespace Application.Services
                 Description = dto.Description,
                 Cuisine = dto.Cuisine,
                 Difficulty = dto.Difficulty,
-              //  AverageRating = dto.AverageRating,
                 UserId = dto.UserId
-                // Id-ը ավտոմատ կստեղծվի Recipe entity-ում Guid.NewGuid()-ով
             };
 
             await _recipeRepo.AddAsync(entity);
+            await _unitOfWork.SaveChangesAsync(); // 👈 ապահով պահպանում
 
-            // վերադարձնում ենք RecipeDTO (Id արդեն ստեղծված է)
             return new RecipeDTO
             {
                 Id = entity.Id,
@@ -90,7 +102,8 @@ namespace Application.Services
                 Cuisine = entity.Cuisine,
                 Difficulty = entity.Difficulty,
                 AverageRating = entity.AverageRating,
-                UserId = entity.UserId
+                UserId = entity.UserId,
+                ImagePath = entity.ImagePath
             };
         }
 
@@ -101,30 +114,57 @@ namespace Application.Services
             if (recipe == null) return false;
 
             await _recipeRepo.DeleteAsync(recipe);
+            await _unitOfWork.SaveChangesAsync(); // 👈 ավելացրու այս պահպանումը
             return true;
         }
 
-        // ✅ Գնահատել recipe (RateRecipeAsync)
+        // ✅ Գնահատել recipe (Transaction-ով)
         public async Task<bool> RateRecipeAsync(Guid recipeId, Guid userId, int score, string? comment)
         {
             var recipe = await _recipeRepo.GetByIdAsync(recipeId);
             if (recipe == null) return false;
 
-            var rating = new Rating
+            // 👇 Transaction-safe գործողություն
+            await _unitOfWork.ExecuteInTransactionAsync(async ct =>
             {
-                RecipeId = recipeId,
-                UserId = userId,
-                Score = score,
-                Comment = comment
-            };
+                // 1️⃣ Ստեղծում ենք նոր գնահատական
+                var rating = new Rating
+                {
+                    RecipeId = recipeId,
+                    UserId = userId,
+                    Score = score,
+                    Comment = comment
+                };
 
-            await _ratingRepo.AddAsync(rating);
+                await _ratingRepo.AddAsync(rating);
 
-            // Պարզ օրինակ՝ թարմացնում ենք միջին գնահատականը (եթե անհրաժեշտ է)
-           // recipe.AverageRating = (recipe.AverageRating + score) / 2;
-           // await _recipeRepo.UpdateAsync(recipe);
+                // 2️⃣ Թարմացնում ենք միջին գնահատականը
+                var allRatings = recipe.Ratings.Append(rating);
+                recipe.AverageRating = allRatings.Average(r => r.Score);
+
+                await _recipeRepo.UpdateAsync(recipe);
+            });
 
             return true;
+        }
+
+        // ✅ Թարմացնել recipe (օր.՝ նկարի upload-ի ժամանակ)
+        public async Task<RecipeDTO> UpdateAsync(Recipe recipe)
+        {
+            await _recipeRepo.UpdateAsync(recipe);
+            await _unitOfWork.SaveChangesAsync(); // 👈 սա էլ ապահով պահպանում է փոփոխությունները
+
+            return new RecipeDTO
+            {
+                Id = recipe.Id,
+                Title = recipe.Title,
+                Description = recipe.Description,
+                Cuisine = recipe.Cuisine,
+                Difficulty = recipe.Difficulty,
+                UserId = recipe.UserId,
+                AverageRating = recipe.AverageRating,
+                ImagePath = recipe.ImagePath
+            };
         }
     }
 }

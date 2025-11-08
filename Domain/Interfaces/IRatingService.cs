@@ -10,7 +10,8 @@ namespace Domain.Interfaces
     public interface IRatingService
     {
         Task<IEnumerable<RatingDto>> GetByRecipeIdAsync(Guid recipeId);
-        Task<RatingDto> AddRatingAsync(RatingDto dto);
+        Task<RatingDto?> CreateAsync(CreateRatingDto dto);
+        Task<RatingDto?> UpdateAsync(Guid id, UpdateRatingDto dto);
         Task<bool> DeleteAsync(Guid id);
     }
 }

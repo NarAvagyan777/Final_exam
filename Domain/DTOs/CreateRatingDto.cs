@@ -1,8 +1,14 @@
-﻿namespace Domain.DTOs
+﻿using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Text;
+using System.Threading.Tasks;
+
+namespace Domain.DTOs
 {
-    public class RatingDto
+    public class CreateRatingDto
     {
-        public Guid Id { get; set; }              // ✅ Սա միայն response-ի համար
+
         public Guid RecipeId { get; set; }
         public Guid UserId { get; set; }
         public int Score { get; set; }

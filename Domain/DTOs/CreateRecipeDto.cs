@@ -13,10 +13,7 @@ namespace Domain.DTOs
         public string Cuisine { get; set; } = default!;
         public string Difficulty { get; set; } = default!;
 
-        // Սա կարող ես թողնել կամ հանել՝ ըստ ցանկության
-       // public double AverageRating { get; set; } = 0;
-
-        // ✅ UserId պետք է, որ իմանանք ով է ստեղծել recipe-ն
+       
         public Guid UserId { get; set; }
     }
 }
