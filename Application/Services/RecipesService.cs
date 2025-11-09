@@ -1,7 +1,8 @@
 ﻿using Domain.DTOs;
 using Domain.Entities;
 using Domain.Interfaces;
-using Domain.RepositoryInterfaces; // 👈 միացրու սա UnitOfWork-ի համար
+using Domain.RepositoryInterfaces;
+using Infrastructure.Messaging; // 👈 RabbitMQ Publisher-ի import
 using Infrastructure.RepositoryInterfaces;
 
 namespace Application.Services
@@ -11,26 +12,28 @@ namespace Application.Services
         private readonly IRecipeRepository _recipeRepo;
         private readonly IRatingRepository _ratingRepo;
         private readonly IUnitOfWork _unitOfWork;
+        private readonly RabbitMqPublisher _publisher; // 👈 RabbitMQ publisher
 
         public RecipesService(
             IRecipeRepository recipeRepo,
             IRatingRepository ratingRepo,
-            IUnitOfWork unitOfWork)
+            IUnitOfWork unitOfWork,
+            RabbitMqPublisher publisher) // 👈 publisher dependency
         {
             _recipeRepo = recipeRepo;
             _ratingRepo = ratingRepo;
             _unitOfWork = unitOfWork;
+            _publisher = publisher;
         }
 
-        // ✅ Բոլոր recipe-ների ստացում էջայնությամբ և ֆիլտրերով
-        public async Task<IEnumerable<RecipeDTO>> GetAllAsync(
+        // ✅ Էջավորում + Ֆիլտրում
+        public async Task<PagedResult<RecipeDTO>> GetAllAsync(
             int page = 1,
             int pageSize = 10,
             string? cuisine = null,
             string? difficulty = null)
         {
             var recipes = await _recipeRepo.GetAllAsync();
-
             var query = recipes.AsQueryable();
 
             if (!string.IsNullOrWhiteSpace(cuisine))
@@ -39,22 +42,33 @@ namespace Application.Services
             if (!string.IsNullOrWhiteSpace(difficulty))
                 query = query.Where(r => r.Difficulty.ToLower() == difficulty.ToLower());
 
-            return query.Skip((page - 1) * pageSize)
-                        .Take(pageSize)
-                        .Select(r => new RecipeDTO
-                        {
-                            Id = r.Id,
-                            Title = r.Title,
-                            Description = r.Description,
-                            Cuisine = r.Cuisine,
-                            Difficulty = r.Difficulty,
-                            AverageRating = r.AverageRating,
-                            UserId = r.UserId,
-                            ImagePath = r.ImagePath
-                        });
+            var totalCount = query.Count();
+
+            var paged = query
+                .Skip((page - 1) * pageSize)
+                .Take(pageSize)
+                .ToList();
+
+            return new PagedResult<RecipeDTO>
+            {
+                Items = paged.Select(r => new RecipeDTO
+                {
+                    Id = r.Id,
+                    Title = r.Title,
+                    Description = r.Description,
+                    Cuisine = r.Cuisine,
+                    Difficulty = r.Difficulty,
+                    AverageRating = r.AverageRating,
+                    UserId = r.UserId,
+                    ImagePath = r.ImagePath
+                }),
+                TotalCount = totalCount,
+                Page = page,
+                PageSize = pageSize
+            };
         }
 
-        // ✅ Ստանալ մեկ recipe ըստ ID-ի (DTO)
+        // ✅ Ստանալ մեկ recipe DTO
         public async Task<RecipeDTO?> GetByIdAsync(Guid id)
         {
             var recipe = await _recipeRepo.GetByIdAsync(id);
@@ -73,13 +87,13 @@ namespace Application.Services
             };
         }
 
-        // ✅ Ստանալ Recipe entity ըստ ID-ի (upload-ի կամ update-ի համար)
+        // ✅ Ստանալ recipe entity
         public async Task<Recipe?> GetEntityByIdAsync(Guid id)
         {
             return await _recipeRepo.GetByIdAsync(id);
         }
 
-        // ✅ Ստեղծել նոր recipe (օգտագործում է CreateRecipeDto)
+        // ✅ Ստեղծել recipe և ուղարկել հաղորդագրություն RabbitMQ-ին
         public async Task<RecipeDTO> CreateAsync(CreateRecipeDto dto)
         {
             var entity = new Recipe
@@ -92,7 +106,18 @@ namespace Application.Services
             };
 
             await _recipeRepo.AddAsync(entity);
-            await _unitOfWork.SaveChangesAsync(); // 👈 ապահով պահպանում
+            await _unitOfWork.SaveChangesAsync();
+
+            // 📨 Ուղարկում ենք հաղորդագրություն RabbitMQ-ին
+            _publisher.Publish(new
+            {
+                Event = "RecipeCreated",
+                RecipeId = entity.Id,
+                Title = entity.Title,
+                Cuisine = entity.Cuisine,
+                Difficulty = entity.Difficulty,
+                UserId = entity.UserId
+            });
 
             return new RecipeDTO
             {
@@ -114,7 +139,15 @@ namespace Application.Services
             if (recipe == null) return false;
 
             await _recipeRepo.DeleteAsync(recipe);
-            await _unitOfWork.SaveChangesAsync(); // 👈 ավելացրու այս պահպանումը
+            await _unitOfWork.SaveChangesAsync();
+
+            // 📨 RabbitMQ event (optional)
+            _publisher.Publish(new
+            {
+                Event = "RecipeDeleted",
+                RecipeId = id
+            });
+
             return true;
         }
 
@@ -124,10 +157,8 @@ namespace Application.Services
             var recipe = await _recipeRepo.GetByIdAsync(recipeId);
             if (recipe == null) return false;
 
-            // 👇 Transaction-safe գործողություն
             await _unitOfWork.ExecuteInTransactionAsync(async ct =>
             {
-                // 1️⃣ Ստեղծում ենք նոր գնահատական
                 var rating = new Rating
                 {
                     RecipeId = recipeId,
@@ -138,21 +169,39 @@ namespace Application.Services
 
                 await _ratingRepo.AddAsync(rating);
 
-                // 2️⃣ Թարմացնում ենք միջին գնահատականը
                 var allRatings = recipe.Ratings.Append(rating);
                 recipe.AverageRating = allRatings.Average(r => r.Score);
 
                 await _recipeRepo.UpdateAsync(recipe);
             });
 
+            // 📨 Event — Rating added
+            _publisher.Publish(new
+            {
+                Event = "RecipeRated",
+                RecipeId = recipeId,
+                UserId = userId,
+                Score = score,
+                Comment = comment
+            });
+
             return true;
         }
 
-        // ✅ Թարմացնել recipe (օր.՝ նկարի upload-ի ժամանակ)
+        // ✅ Թարմացնել recipe (օր.՝ upload-ի ժամանակ)
         public async Task<RecipeDTO> UpdateAsync(Recipe recipe)
         {
             await _recipeRepo.UpdateAsync(recipe);
-            await _unitOfWork.SaveChangesAsync(); // 👈 սա էլ ապահով պահպանում է փոփոխությունները
+            await _unitOfWork.SaveChangesAsync();
+
+            // 📨 Event — Recipe updated
+            _publisher.Publish(new
+            {
+                Event = "RecipeUpdated",
+                RecipeId = recipe.Id,
+                Title = recipe.Title,
+                UpdatedAt = DateTime.UtcNow
+            });
 
             return new RecipeDTO
             {

@@ -1,5 +1,6 @@
 <Solution>
   <Project Path="../Application/Application.csproj" />
+  <Project Path="../Consumer/Consumer.csproj" Id="33ddd24d-3bfc-4709-a886-41c97f849539" />
   <Project Path="../Domain/Domain.csproj" />
   <Project Path="../Infrastructure/Infrastructure.csproj" />
   <Project Path="RecipeService.csproj" />

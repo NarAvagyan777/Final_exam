@@ -1,0 +1,78 @@
+version: '3.9'
+
+services:
+  # ======================
+  # 🧩 Web API Service
+  # ======================
+  recipeservice:
+    build:
+      context: .
+      dockerfile: RecipeService/Dockerfile
+    container_name: recipeservice
+    ports:
+      - "5000:8080"
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+      - ConnectionStrings__DefaultConnection=Host=db;Port=5432;Database=RecipeAppDb;Username=postgres;Password=11111
+      - JwtSettings__SecretKey=SuperSecretKey1234567890SuperSecretKey12
+      - JwtSettings__Issuer=RecipeApp
+      - JwtSettings__Audience=RecipeAppUsers
+      - JwtSettings__ExpiryMinutes=180
+      - RABBITMQ_HOST=rabbitmq
+    depends_on:
+      - db
+      - rabbitmq
+    networks:
+      - recipe_net
+
+  # ======================
+  # 🐇 RabbitMQ Consumer
+  # ======================
+  consumer:
+    build:
+      context: .
+      dockerfile: Consumer/Dockerfile
+    container_name: recipe_consumer
+    environment:
+      - RABBITMQ_HOST=rabbitmq
+    depends_on:
+      - rabbitmq
+    networks:
+      - recipe_net
+
+  # ======================
+  # 🐘 PostgreSQL Database
+  # ======================
+  db:
+    image: postgres:16
+    container_name: recipe_db
+    restart: always
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=11111
+      - POSTGRES_DB=RecipeAppDb
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    networks:
+      - recipe_net
+
+  # ======================
+  # 🐇 RabbitMQ Broker
+  # ======================
+  rabbitmq:
+    image: rabbitmq:3-management
+    container_name: rabbitmq
+    ports:
+      - "5672:5672"
+      - "15672:15672"  # Web management UI
+    networks:
+      - recipe_net
+
+networks:
+  recipe_net:
+    driver: bridge
+
+volumes:
+  pgdata:

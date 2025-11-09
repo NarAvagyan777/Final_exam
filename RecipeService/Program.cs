@@ -3,6 +3,7 @@ using Domain.Interfaces;
 using Domain.RepositoryInterfaces;
 using Infrastructure.Auth;
 using Infrastructure.Data;
+using Infrastructure.Messaging; // ✅ for RabbitMQ
 using Infrastructure.RepositoryImplamantations;
 using Infrastructure.RepositoryImplementations;
 using Infrastructure.RepositoryInterfaces;
@@ -31,7 +32,6 @@ builder.Services.AddScoped<INutritionRepository, NutritionRepository>();
 builder.Services.AddScoped<IRatingRepository, RatingRepository>();
 builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
 
-
 // ===========================================
 // 🧩 SERVICE REGISTRATION
 // ===========================================
@@ -42,6 +42,12 @@ builder.Services.AddScoped<INutritionService, NutritionService>();
 builder.Services.AddScoped<IRatingService, RatingService>();
 
 // ===========================================
+// 📨 RABBITMQ REGISTRATION
+// ===========================================
+// Register RabbitMqPublisher as a singleton to reuse the same connection
+builder.Services.AddSingleton<RabbitMqPublisher>();
+
+// ===========================================
 // 🌐 ENABLE CORS (important for Swagger and Frontend)
 // ===========================================
 builder.Services.AddCors(options =>
@@ -49,9 +55,9 @@ builder.Services.AddCors(options =>
     options.AddPolicy("AllowAll", policy =>
     {
         policy
-            .AllowAnyOrigin()    // ✅ Թույլատրում է ցանկացած frontend (localhost կամ domain)
-            .AllowAnyMethod()    // ✅ Թույլատրում է GET, POST, PUT, DELETE...
-            .AllowAnyHeader();   // ✅ Թույլատրում է custom headers (օր. Authorization)
+            .AllowAnyOrigin()
+            .AllowAnyMethod()
+            .AllowAnyHeader();
     });
 });
 
@@ -102,6 +108,7 @@ builder.Services.AddSwaggerGen(c =>
         Description = "API for managing recipes, ingredients, and users"
     });
 
+    // ✅ JWT Authorization in Swagger UI
     c.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
     {
         Name = "Authorization",
@@ -133,6 +140,7 @@ builder.Services.AddSwaggerGen(c =>
 // ===========================================
 var app = builder.Build();
 
+// ✅ Enable Swagger UI (for development)
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
@@ -144,7 +152,7 @@ app.UseHttpsRedirection();
 // ✅ Enable Static Files (for image access in /wwwroot/images)
 app.UseStaticFiles();
 
-// ✅ Enable CORS (fix for “Failed to fetch”)
+// ✅ Enable CORS
 app.UseCors("AllowAll");
 
 // ✅ Custom middleware for image validation
@@ -154,6 +162,8 @@ app.UseImageValidation();
 app.UseAuthentication();
 app.UseAuthorization();
 
+// ✅ Map Controllers
 app.MapControllers();
 
+// ✅ Run Application
 app.Run();

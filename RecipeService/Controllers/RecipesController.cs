@@ -19,6 +19,7 @@ namespace RecipeApp.API.Controllers
             _recipeService = recipeService;
         }
 
+        // ✅ GET api/recipes?page=1&pageSize=10&cuisine=Italian&difficulty=Easy
         [HttpGet]
         public async Task<IActionResult> GetAll(
             [FromQuery] int page = 1,
@@ -26,10 +27,23 @@ namespace RecipeApp.API.Controllers
             [FromQuery] string? cuisine = null,
             [FromQuery] string? difficulty = null)
         {
-            var recipes = await _recipeService.GetAllAsync(page, pageSize, cuisine, difficulty);
-            return Ok(recipes);
+            var result = await _recipeService.GetAllAsync(page, pageSize, cuisine, difficulty);
+
+            return Ok(new
+            {
+                message = "✅ Recipes fetched successfully.",
+                data = result.Items,
+                pagination = new
+                {
+                    totalCount = result.TotalCount,
+                    currentPage = result.Page,
+                    pageSize = result.PageSize,
+                    totalPages = (int)Math.Ceiling(result.TotalCount / (double)result.PageSize)
+                }
+            });
         }
 
+        // ✅ GET api/recipes/{id}
         [HttpGet("{id}")]
         public async Task<IActionResult> GetById(Guid id)
         {
@@ -40,6 +54,7 @@ namespace RecipeApp.API.Controllers
             return Ok(recipe);
         }
 
+        // ✅ POST api/recipes
         [HttpPost]
         public async Task<IActionResult> Create([FromBody] CreateRecipeDto dto)
         {
@@ -53,6 +68,7 @@ namespace RecipeApp.API.Controllers
             return CreatedAtAction(nameof(GetById), new { id = recipe.Id }, recipe);
         }
 
+        // ✅ DELETE api/recipes/{id}
         [HttpDelete("{id}")]
         public async Task<IActionResult> Delete(Guid id)
         {
@@ -63,6 +79,7 @@ namespace RecipeApp.API.Controllers
             return NoContent();
         }
 
+        // ✅ POST api/recipes/{id}/rate?userId={userId}&score={score}&comment={comment}
         [HttpPost("{id}/rate")]
         public async Task<IActionResult> Rate(
             Guid id,
@@ -77,9 +94,10 @@ namespace RecipeApp.API.Controllers
             if (!success)
                 return BadRequest("Failed to rate recipe. Recipe may not exist.");
 
-            return Ok(new { message = "Recipe rated successfully." });
+            return Ok(new { message = "✅ Recipe rated successfully." });
         }
 
+        // ✅ POST api/recipes/uploadImage
         [HttpPost("uploadImage")]
         public async Task<IActionResult> UploadImage([FromForm] CreateUploadImage dto)
         {
